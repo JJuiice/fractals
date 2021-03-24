@@ -1,7 +1,10 @@
+glcontext==2.3.3
+moderngl==5.6.4
+moderngl-window==2.3.0
+multipledispatch==0.6.0
 numpy==1.20.1
-PyOpenGL==3.1.5
-PyQt5==5.15.4
+Pillow==8.1.2
+pyglet==1.5.15
 PyQt5-Qt==5.15.2
-PyQt5-Qt5==5.15.2
-PyQt5-sip==12.8.1
-PyQt5-stubs==5.15.2.0
+pyrr==0.10.3
+six==1.15.0

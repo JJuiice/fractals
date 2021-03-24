@@ -1,102 +1,94 @@
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QWindow, QOpenGLWindow
-
-from OpenGL import GL
+from moderngl_window import WindowConfig
 
 from logging import getLogger
 import numpy as np
-import sys
-import ctypes
 
 logger = getLogger(__name__)
 
-w, h = 400, 400
-
-vtx_code = '''
-attribute vec2 position;
-void main()
-{
-  gl_Position = vec4(position, 0.0, 1.0);
-}
-'''
-
-frags_code = '''
-void main()
-{
-  gl_FragColor = vec4(1.0, 0.0, 1.0, 0.0);
-}
-'''
+w, h = 200, 200
 
 
-class MainWindow(QOpenGLWindow):
-    def __init__(self):
-        super().__init__()
+class MainWindow(WindowConfig):
+    gl_version = (3, 3)
+    window_size = (h, w)
+    aspect_ratio = 1
+    title = "Mandelbrot"
 
-        self.resize(w, h)
-        self.setSurfaceType(QWindow.OpenGLSurface)
-        self.setTitle("Mandelbrot")
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Do initialization here
+        self.prog = self.ctx.program(
+            vertex_shader='''
+                #version 330
+                in vec2 in_vert;
+                in vec3 in_color;
+                out vec3 v_color;
+                void main() {
+                    gl_Position = vec4(in_vert, 0.0, 1.0);
+                    v_color = in_color;
+                }
+            ''',
+            fragment_shader='''
+                #version 330
+                in vec3 v_color;
+                out vec4 f_color;
+                void main() {
+                    f_color = vec4(v_color, 1.0);
+                }
+            ''',
+        )
 
-    def initializeGL(self) -> None:
-        # Create Program and Shaders
-        program = GL.glCreateProgram()
-        vtx = GL.glCreateShader(GL.GL_VERTEX_SHADER)
-        frag = GL.glCreateShader(GL.GL_FRAGMENT_SHADER)
+        # Point coordinates are put followed by the vec3 color values
+        # [x, y, r, g, b, ...]
+        vertices = compute()
+        # vertices = np.array([np.random.uniform(-1, 1) if ind % 5 < 2 else np.random.random_sample() for ind, x in enumerate(range(w))])
 
-        for name, shader, source in (('Vertex', vtx, vtx_code), ('Fragment', frag, frags_code)):
-            # Set shaders source
-            GL.glShaderSource(shader, source)
+        self.vbo = self.ctx.buffer(vertices)
 
-            # Compile shaders
-            GL.glCompileShader(shader)
-            if not GL.glGetShaderiv(shader, GL.GL_COMPILE_STATUS):
-                error = GL.glGetShaderInfoLog(shader).decode()
-                logger.error("%s shader compilation error: %s", name, error)
+        # We control the 'in_vert' and `in_color' variables
+        self.vao = self.ctx.vertex_array(
+            self.prog,
+            [
+                # Map in_vert to the first 2 floats
+                # Map in_color to the next 3 floats
+                (self.vbo, '2f 3f', 'in_vert', 'in_color')
+            ],
+        )
 
-            GL.glAttachShader(program, shader)
+        # np.set_printoptions(threshold=np.inf)
+        print(vertices)
 
-        GL.glLinkProgram(program)
-        if not GL.glGetProgramiv(program, GL.GL_LINK_STATUS):
-            print(GL.glGetProgramInfoLog(program))
-            raise RuntimeError('Linking error')
-
-        GL.glDetachShader(program, vtx)
-        GL.glDetachShader(program, frag)
-
-        GL.glUseProgram(program)
-
-        # Build data and request buffer slot from GPU
-        data = np.zeros((3, 2), dtype=np.float32)
-        buffer = GL.glGenBuffers(1)
-
-        # Set default buffer and vertex attribute array
-        stride = data.strides[0]
-        offset = ctypes.c_void_p(0)
-        loc = GL.glGetAttribLocation(program, "position")
-        GL.glEnableVertexAttribArray(loc)
-        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, buffer)
-        GL.glVertexAttribPointer(loc, 2, GL.GL_FLOAT, False, stride, offset)
-
-        # CPU data
-        data[...] = [(-1, +1), (+0.5, -1), (-1, -1)]
-
-        # Upload CPU data to GPU buffer
-        GL.glBufferData(
-            GL.GL_ARRAY_BUFFER, data.nbytes, data, GL.GL_DYNAMIC_DRAW)
-
-    def paintGL(self) -> None:
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-        GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 3)
+    def render(self, time, frametime):
+        self.ctx.clear(1.0, 1.0, 1.0)
+        self.vao.render()
 
 
 def compute():
-    pass
+    max_iters = 999
+    ms_x_space = np.linspace(-2.5, 1, w)
+    ms_y_space = np.linspace(-1, 1, h)
+    data = []
+
+    for x_inx, x in enumerate(ms_x_space):
+        mgl_x = ms_y_space[x_inx]
+        for y in ms_y_space:
+            iter_n = 0
+            c = complex(x, y)
+            z = complex(0, 0)
+
+            while z.real**2 + z.imag**2 <= 4 and iter_n < max_iters:
+                z = z**2 + c
+                iter_n += 1
+
+            iter_n_str = f"{iter_n:03d}"
+            r = 0 if int(iter_n_str[0]) == 0 else 0.1*int(iter_n_str[0])
+            g = 0 if int(iter_n_str[1]) == 0 else 0.1*int(iter_n_str[1])
+            b = 0 if int(iter_n_str[2]) == 0 else 0.1*int(iter_n_str[2])
+
+            data.extend([mgl_x, y, r, g, b])
+
+    return np.array(data)
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    window = MainWindow()
-    window.show()
-
-    logger.info("Beginning OpenGL execution")
-    sys.exit(app.exec_())
+    MainWindow.run()
