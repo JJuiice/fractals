@@ -1,94 +1,135 @@
+from moderngl import TRIANGLE_STRIP
 from moderngl_window import WindowConfig
 
 from logging import getLogger
+from colour import Color
+from PIL import Image
+from os.path import normpath, join
 import numpy as np
 
 logger = getLogger(__name__)
 
-w, h = 200, 200
+w, h = 1280, 720
+a_ratio = 16 / 9
+
+color_palette = [Color("black"), Color("blue"), Color("yellow"), Color("red")]
+
+mand_vtx_shader = '''
+#version 330
+
+in vec2 in_vert;
+out vec2 v_text;
+
+void main() {
+    gl_Position = vec4(in_vert, 0.0, 1.0);
+    v_text = in_vert;
+}
+'''
+
+mand_frag_shader = '''
+# version 330
+
+in vec2 v_text;
+out vec4 f_color;
+
+uniform sampler2D Texture;
+uniform vec2 Center;
+uniform float Scale;
+uniform float Ratio;
+uniform int Max_Iters;
+
+void main()
+{
+    vec2 c;
+    int i;
+
+    c.x = Ratio * v_text.x * Scale - Center.x;
+    c.y = v_text.y * Scale - Center.y;
+
+    vec2 z = c;
+
+    for (i = 0; i < Max_Iters; i++) {
+        float
+        x = (z.x * z.x - z.y * z.y) + c.x;
+        float
+        y = (z.y * z.x + z.x * z.y) + c.y;
+
+        if ((x * x + y * y) > 4.0) {
+            break;
+        }
+        
+        z.x = x;
+        z.y = y;
+    }
+
+    f_color = texture(Texture, vec2((i == Max_Iters ? 0.0: float(i)) / 100.0, 0.0));
+}
+'''
 
 
 class MainWindow(WindowConfig):
     gl_version = (3, 3)
-    window_size = (h, w)
-    aspect_ratio = 1
+    window_size = (w, h)
+    aspect_ratio = a_ratio
     title = "Mandelbrot"
+    resource_dir = normpath(join(__file__, '../data'))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Do initialization here
+
         self.prog = self.ctx.program(
-            vertex_shader='''
-                #version 330
-                in vec2 in_vert;
-                in vec3 in_color;
-                out vec3 v_color;
-                void main() {
-                    gl_Position = vec4(in_vert, 0.0, 1.0);
-                    v_color = in_color;
-                }
-            ''',
-            fragment_shader='''
-                #version 330
-                in vec3 v_color;
-                out vec4 f_color;
-                void main() {
-                    f_color = vec4(v_color, 1.0);
-                }
-            ''',
+            vertex_shader=mand_vtx_shader,
+            fragment_shader=mand_frag_shader
         )
 
-        # Point coordinates are put followed by the vec3 color values
-        # [x, y, r, g, b, ...]
-        vertices = compute()
-        # vertices = np.array([np.random.uniform(-1, 1) if ind % 5 < 2 else np.random.random_sample() for ind, x in enumerate(range(w))])
+        self.center = self.prog['Center']
+        self.scale = self.prog['Scale']
+        self.ratio = self.prog['Ratio']
+        self.max_iters = self.prog['Max_Iters']
 
-        self.vbo = self.ctx.buffer(vertices)
+        thirds = int(256 / (len(color_palette) - 1))
+        color_bytes = np.array([[[0, 0, 0]]], dtype=np.uint8)
+        for i in range(len(color_palette) - 1):
+            section_gradient = list(color_palette[i].range_to(color_palette[i + 1], thirds))
+            color_bytes = np.vstack((color_bytes, [np.array([list(color.get_rgb())]) * 255 for color in section_gradient]))
+
+        # print(color_bytes.astype(np.uint8))
+        # image = Image.open('./data/pal.png')
+        # img = Image.fromarray(color_bytes.reshape(216, 1), 'RGB')
+        # img.show()
+        # self.texture = self.load_texture_2d("pal.png")
+        # with open("./data/pal.png", "rb") as image:
+        #   b = [x.strip() for x in image.readlines()]
+        # print(b)
+        # self.texture = self.ctx.texture((1, 256), 3, data=a)
+        self.texture = self.ctx.texture((256, 1), 3, data=color_bytes.astype(np.uint8))
+        # print(np.array(image))
+
+        vertices = np.array([-1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0], dtype='f4')
 
         # We control the 'in_vert' and `in_color' variables
-        self.vao = self.ctx.vertex_array(
-            self.prog,
-            [
-                # Map in_vert to the first 2 floats
-                # Map in_color to the next 3 floats
-                (self.vbo, '2f 3f', 'in_vert', 'in_color')
-            ],
-        )
-
-        # np.set_printoptions(threshold=np.inf)
-        print(vertices)
+        self.vbo = self.ctx.buffer(vertices)
+        self.vao = self.ctx.simple_vertex_array(self.prog, self.vbo, 'in_vert')
 
     def render(self, time, frametime):
         self.ctx.clear(1.0, 1.0, 1.0)
-        self.vao.render()
 
+        self.center.value = (0.5, 0.0)
+        self.max_iters.value = 100
+        self.scale.value = 1.5
+        self.ratio.value = self.aspect_ratio
 
-def compute():
-    max_iters = 999
-    ms_x_space = np.linspace(-2.5, 1, w)
-    ms_y_space = np.linspace(-1, 1, h)
-    data = []
-
-    for x_inx, x in enumerate(ms_x_space):
-        mgl_x = ms_y_space[x_inx]
-        for y in ms_y_space:
-            iter_n = 0
-            c = complex(x, y)
-            z = complex(0, 0)
-
-            while z.real**2 + z.imag**2 <= 4 and iter_n < max_iters:
-                z = z**2 + c
-                iter_n += 1
-
-            iter_n_str = f"{iter_n:03d}"
-            r = 0 if int(iter_n_str[0]) == 0 else 0.1*int(iter_n_str[0])
-            g = 0 if int(iter_n_str[1]) == 0 else 0.1*int(iter_n_str[1])
-            b = 0 if int(iter_n_str[2]) == 0 else 0.1*int(iter_n_str[2])
-
-            data.extend([mgl_x, y, r, g, b])
-
-    return np.array(data)
+        self.texture.use()
+        self.vao.render(TRIANGLE_STRIP)
 
 
 if __name__ == "__main__":
-    MainWindow.run()
+    # MainWindow.run()
+    thirds = int(256 / (len(color_palette) - 1))
+    color_bytes = np.array([[[0, 0, 0]]])# np.zeros((256, 1, 3))
+    for i in range(len(color_palette) - 1):
+        section_gradient = list(color_palette[i].range_to(color_palette[i + 1], thirds))
+        color_bytes = np.dstack((color_bytes, [np.array([[list(color.get_rgb())]]) * 255 for color in section_gradient]))
+
+    print(color_bytes)
+    # img = Image.fromarray(, 'RGB')
