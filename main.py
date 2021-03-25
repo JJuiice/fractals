@@ -3,7 +3,6 @@ from moderngl_window import WindowConfig
 
 from logging import getLogger
 from colour import Color
-from PIL import Image
 from os.path import normpath, join
 import numpy as np
 
@@ -12,7 +11,7 @@ logger = getLogger(__name__)
 w, h = 1280, 720
 a_ratio = 16 / 9
 
-color_palette = [Color("black"), Color("blue"), Color("yellow"), Color("red")]
+color_palette = [Color("black"), Color("blue"), Color("red")]
 
 mand_vtx_shader = '''
 #version 330
@@ -72,7 +71,6 @@ class MainWindow(WindowConfig):
     window_size = (w, h)
     aspect_ratio = a_ratio
     title = "Mandelbrot"
-    resource_dir = normpath(join(__file__, '../data'))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -87,23 +85,24 @@ class MainWindow(WindowConfig):
         self.ratio = self.prog['Ratio']
         self.max_iters = self.prog['Max_Iters']
 
-        thirds = int(256 / (len(color_palette) - 1))
-        color_bytes = np.array([[[0, 0, 0]]], dtype=np.uint8)
+        start_inx = 0
+        sections = int(256 / (len(color_palette) - 1))
+        end_inx = sections
+        color_bytes = np.zeros((256, 1, 3), dtype=np.uint8)
         for i in range(len(color_palette) - 1):
-            section_gradient = list(color_palette[i].range_to(color_palette[i + 1], thirds))
-            color_bytes = np.vstack((color_bytes, [np.array([list(color.get_rgb())]) * 255 for color in section_gradient]))
+            section_gradient = list(color_palette[i].range_to(color_palette[i + 1], sections))
+            color_bytes[start_inx: end_inx, 0] = [np.array(np.array(list(color.get_rgb())) * 255).astype(np.uint8)
+                                                   for color in section_gradient]
+            start_inx = sections
+            end_inx += sections
 
-        # print(color_bytes.astype(np.uint8))
-        # image = Image.open('./data/pal.png')
-        # img = Image.fromarray(color_bytes.reshape(216, 1), 'RGB')
-        # img.show()
-        # self.texture = self.load_texture_2d("pal.png")
-        # with open("./data/pal.png", "rb") as image:
-        #   b = [x.strip() for x in image.readlines()]
-        # print(b)
-        # self.texture = self.ctx.texture((1, 256), 3, data=a)
-        self.texture = self.ctx.texture((256, 1), 3, data=color_bytes.astype(np.uint8))
-        # print(np.array(image))
+        print(color_bytes)
+        self.mouse_center = (0.5, 0.0)
+        self.center.value = self.mouse_center
+        self.scale.value = 1.5
+        self.max_iters.value = 100
+        self.ratio.value = self.aspect_ratio
+        self.texture = self.ctx.texture((256, 1), 3, data=color_bytes)
 
         vertices = np.array([-1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0], dtype='f4')
 
@@ -114,22 +113,38 @@ class MainWindow(WindowConfig):
     def render(self, time, frametime):
         self.ctx.clear(1.0, 1.0, 1.0)
 
-        self.center.value = (0.5, 0.0)
-        self.max_iters.value = 100
-        self.scale.value = 1.5
-        self.ratio.value = self.aspect_ratio
-
         self.texture.use()
         self.vao.render(TRIANGLE_STRIP)
 
+    def mouse_scroll_event(self, x_offset: float, y_offset: float):
+        if y_offset > 0:
+            if self.scale.value > 0.1:
+                self.center.value = normalize_xy(self.mouse_center[0], self.mouse_center[1])
+                self.scale.value -= 0.1
+            elif self.scale.value > 0.01:
+                self.center.value = normalize_xy(self.mouse_center[0], self.mouse_center[1])
+                self.scale.value -= 0.01
+            elif self.scale.value > 0.001:
+                self.center.value = normalize_xy(self.mouse_center[0], self.mouse_center[1])
+                self.scale.value -= 0.001
+        elif y_offset < 0 and self.scale.value < 1.5:
+            if self.scale.value < 1.5:
+                self.center.value = normalize_xy(self.mouse_center[0], self.mouse_center[1])
+                self.scale.value += 0.1
+            else:
+                self.center.value = (0.5, 0.0)
+                self.scale.value = 1.5
+
+    def mouse_position_event(self, x, y, dx, dy):
+        self.mouse_center = (x, y)
+
+
+def normalize_xy(x, y):
+    norm_x = 1.0 - 2.0 * float(x / w);
+    norm_y = -1.0 + 2.0 * float(y / h);
+
+    return norm_x, norm_y
+
 
 if __name__ == "__main__":
-    # MainWindow.run()
-    thirds = int(256 / (len(color_palette) - 1))
-    color_bytes = np.array([[[0, 0, 0]]])# np.zeros((256, 1, 3))
-    for i in range(len(color_palette) - 1):
-        section_gradient = list(color_palette[i].range_to(color_palette[i + 1], thirds))
-        color_bytes = np.dstack((color_bytes, [np.array([[list(color.get_rgb())]]) * 255 for color in section_gradient]))
-
-    print(color_bytes)
-    # img = Image.fromarray(, 'RGB')
+    MainWindow.run()
