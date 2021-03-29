@@ -15,7 +15,6 @@ color_palette_len = len(color_palette)
 
 max_sig_figs = 4
 scale_list = [round(0.1 ** x, max_sig_figs) for x in range(1, max_sig_figs + 1)]
-scale_highest_zoom = 0.0001
 
 mand_vtx_shader = '''
 #version 330
@@ -46,33 +45,30 @@ void main()
     vec2 c;
     int i;
 
-    c.x = u_ratio * v_text.x * u_scale - 0.5 - u_translate.x;
-    c.y = v_text.y * u_scale - u_translate.y;
+    c.x = u_ratio * v_text.x * u_scale - 0.5 + u_translate.x;
+    c.y = v_text.y * u_scale + u_translate.y;
 
     vec2 z = c;
 
     for (i = 0; i < u_max_iters; i++) {
-        float
-        x = (z.x * z.x - z.y * z.y) + c.x;
-        float
-        y = (z.y * z.x + z.x * z.y) + c.y;
+        float x = (z.x * z.x - z.y * z.y) + c.x;
+        float y = 2 * z.x * z.y + c.y;
 
-        if ((x * x + y * y) > 4.0) {
+        if ((x * x + y * y) > 4.0)
             break;
-        }
         
         z.x = x;
         z.y = y;
     }
 
-    f_color = texture(u_texture, vec2((i == u_max_iters ? 0.0: float(i)) / float(u_max_iters), 0.0));
+    f_color = texture(u_texture, vec2(float(i) / float(u_max_iters), 0.0));
 }
 '''
 
 
 def correction_xy(x, y):
-    norm_x = 1.0 - 2.0 * float(x / w)
-    norm_y = -1.0 + 2.0 * float(y / h)
+    norm_x = -2.65 + 5.3 * float(x / w)
+    norm_y = 1.5 - 3.0 * float(y / h)
 
     return norm_x, norm_y
 
@@ -114,8 +110,9 @@ class MainWindow(WindowConfig):
             start_inx = end_inx
             end_inx += sections
 
-        self.x_vid_offset = 0.5
-        self.mouse_center = (self.x_vid_offset, 0.0)
+        self.mouse_ref = (0, 0)
+        self.cur_loc = (0, 0)
+
         self.translate.value = (0, 0)
         self.scale.value = 1.5
         self.max_iters.value = 100
@@ -124,7 +121,6 @@ class MainWindow(WindowConfig):
 
         vertices = np.array([-1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0], dtype='f4')
 
-        # We control the 'in_vert' and `in_color' variables
         self.vbo = self.ctx.buffer(vertices)
         self.vao = self.ctx.simple_vertex_array(self.prog, self.vbo, 'in_vert')
 
@@ -137,29 +133,36 @@ class MainWindow(WindowConfig):
     def mouse_scroll_event(self, x_offset: float, y_offset: float):
         correction_factor = 0.6
 
-        if y_offset > 0:
-            if self.scale.value > scale_list[-1]:
-                self.translate.value = correction_xy(self.mouse_center[0], self.mouse_center[1])
+        if y_offset > 0 and self.scale.value > scale_list[-1]:
+            self.translate.value = correction_xy(self.mouse_ref[0], self.mouse_ref[1])
 
-                for i in scale_list:
-                    if self.scale.value > i:
-                        self.scale.value -= i * correction_factor
-                        break
+            for i in scale_list:
+                if self.scale.value > i:
+                    self.scale.value -= i * correction_factor
+                    break
 
         elif y_offset < 0:
             if self.scale.value < 1.5:
-                self.translate.value = correction_xy(self.mouse_center[0], self.mouse_center[1])
+                self.translate.value = correction_xy(self.mouse_ref[0], self.mouse_ref[1])
 
+                scaled = 0
                 for i in reversed(scale_list):
                     if self.scale.value < (i * 10):
                         self.scale.value += i * correction_factor
+                        scaled = 1
                         break
+
+                if not scaled:
+                    self.scale.value += 0.1 * correction_factor
             else:
                 self.scale.value = 1.5
-                self.translate.value = (0.5, 0.0)
+                self.translate.value = (0, 0)
 
     def mouse_position_event(self, x, y, dx, dy):
-        self.mouse_center = (x, y)
+        self.cur_loc = (x, y)
+
+        if self.scale.value == 1.5:
+            self.mouse_ref = self.cur_loc
 
 
 if __name__ == "__main__":
