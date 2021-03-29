@@ -7,12 +7,14 @@ import numpy as np
 
 logger = getLogger(__name__)
 
-w, h = 1280, 720
+w, h = 1920, 1080
 a_ratio = 16 / 9
 
 color_palette = [Color("black"), Color("blue"), Color("red")]
 color_palette_len = len(color_palette)
 
+max_sig_figs = 4
+scale_list = [round(0.1 ** x, max_sig_figs) for x in range(1, max_sig_figs + 1)]
 scale_highest_zoom = 0.0001
 
 mand_vtx_shader = '''
@@ -33,23 +35,23 @@ mand_frag_shader = '''
 in vec2 v_text;
 out vec4 f_color;
 
-uniform sampler2D Texture;
-uniform vec2 Center;
-uniform float Scale;
-uniform float Ratio;
-uniform int Max_Iters;
+uniform sampler2D u_texture;
+uniform vec2 u_translate;
+uniform float u_scale;
+uniform float u_ratio;
+uniform int u_max_iters;
 
 void main()
 {
     vec2 c;
     int i;
 
-    c.x = Ratio * v_text.x * Scale - Center.x;
-    c.y = v_text.y * Scale - Center.y;
+    c.x = u_ratio * v_text.x * u_scale - 0.5 - u_translate.x;
+    c.y = v_text.y * u_scale - u_translate.y;
 
     vec2 z = c;
 
-    for (i = 0; i < Max_Iters; i++) {
+    for (i = 0; i < u_max_iters; i++) {
         float
         x = (z.x * z.x - z.y * z.y) + c.x;
         float
@@ -63,17 +65,14 @@ void main()
         z.y = y;
     }
 
-    f_color = texture(Texture, vec2((i == Max_Iters ? 0.0: float(i)) / 100.0, 0.0));
+    f_color = texture(u_texture, vec2((i == u_max_iters ? 0.0: float(i)) / float(u_max_iters), 0.0));
 }
 '''
 
 
-def normalize_xy(x, y, x_offset):
+def correction_xy(x, y):
     norm_x = 1.0 - 2.0 * float(x / w)
     norm_y = -1.0 + 2.0 * float(y / h)
-
-    norm_x += x_offset
-    norm_x = norm_x - 1 if norm_x > 1 else norm_x
 
     return norm_x, norm_y
 
@@ -92,10 +91,10 @@ class MainWindow(WindowConfig):
             fragment_shader=mand_frag_shader
         )
 
-        self.center = self.prog['Center']
-        self.scale = self.prog['Scale']
-        self.ratio = self.prog['Ratio']
-        self.max_iters = self.prog['Max_Iters']
+        self.translate = self.prog['u_translate']
+        self.scale = self.prog['u_scale']
+        self.ratio = self.prog['u_ratio']
+        self.max_iters = self.prog['u_max_iters']
 
         start_inx = 0
         sections = int(256 / color_palette_len)
@@ -111,13 +110,13 @@ class MainWindow(WindowConfig):
         for i in range(len(color_palette) - 1):
             section_gradient = list(color_palette[i].range_to(color_palette[i + 1], sections))
             color_bytes[start_inx: end_inx, 0] = [np.array(np.array(list(color.get_rgb())) * 255).astype(np.uint8)
-                                                   for color in section_gradient]
+                                                  for color in section_gradient]
             start_inx = end_inx
             end_inx += sections
 
         self.x_vid_offset = 0.5
         self.mouse_center = (self.x_vid_offset, 0.0)
-        self.center.value = self.mouse_center
+        self.translate.value = (0, 0)
         self.scale.value = 1.5
         self.max_iters.value = 100
         self.ratio.value = self.aspect_ratio
@@ -136,53 +135,32 @@ class MainWindow(WindowConfig):
         self.vao.render(TRIANGLE_STRIP)
 
     def mouse_scroll_event(self, x_offset: float, y_offset: float):
-        if y_offset > 0:
-            if self.scale.value > scale_highest_zoom:
-                self.center.value = normalize_xy(self.mouse_center[0] , self.mouse_center[1], self.x_vid_offset)
+        correction_factor = 0.6
 
-                if self.scale.value >= 0.1:
-                    self.scale.value -= 0.1
-                elif self.scale.value >= 0.01:
-                    self.scale.value -= 0.01
-                elif self.scale.value >= 0.001:
-                    self.scale.value -= 0.001
-                else:
-                    self.scale.value -= scale_highest_zoom
+        if y_offset > 0:
+            if self.scale.value > scale_list[-1]:
+                self.translate.value = correction_xy(self.mouse_center[0], self.mouse_center[1])
+
+                for i in scale_list:
+                    if self.scale.value > i:
+                        self.scale.value -= i * correction_factor
+                        break
+
         elif y_offset < 0:
             if self.scale.value < 1.5:
-                self.center.value = normalize_xy(self.mouse_center[0], self.mouse_center[1], self.x_vid_offset)
+                self.translate.value = correction_xy(self.mouse_center[0], self.mouse_center[1])
 
-                if self.scale.value <= 0.001:
-                    self.scale.value += scale_highest_zoom
-                elif self.scale.value <= 0.01:
-                    self.scale.value += 0.001
-                elif self.scale.value <= 0.1:
-                    self.scale.value += 0.01
-                else:
-                    self.scale.value += 0.1
+                for i in reversed(scale_list):
+                    if self.scale.value < (i * 10):
+                        self.scale.value += i * correction_factor
+                        break
             else:
                 self.scale.value = 1.5
-                self.center.value = (0.5, 0.0)
-
-        # print("Zoom")
+                self.translate.value = (0.5, 0.0)
 
     def mouse_position_event(self, x, y, dx, dy):
         self.mouse_center = (x, y)
-        # print("Mouse Position Captured")
 
 
 if __name__ == "__main__":
     MainWindow.run()
-    # start_inx = 0
-    # sections = int(256 / (len(color_palette) - 1))
-    # end_inx = sections
-    # color_bytes = np.zeros((256, 1, 3), dtype=np.uint8)
-    # for i in range(len(color_palette) - 1):
-    #     section_gradient = list(color_palette[i].range_to(color_palette[i + 1], sections))
-    #     color_bytes[start_inx: end_inx, 0] = [np.array(np.array(list(color.get_rgb())) * 255).astype(np.uint8)
-    #                                           for color in section_gradient]
-
-    # print(color_bytes)
-    # from PIL import Image
-    # test = Image.fromarray(color_bytes, "RGB")
-    # test.show()
