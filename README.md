@@ -1,5 +1,5 @@
-# Mandelbrot
-Display basic mandelbrot projection
+# Fractals
+Display basic fractal projections - just mandelbrot at the moment
 
 ## Requirements
 - Python 3.9.1
