@@ -9,11 +9,12 @@ logger = getLogger(__name__)
 
 w, h = 1920, 1080
 a_ratio = 16 / 9
+max_zoom_out = 1.5
 
 color_palette = [Color("black"), Color("blue"), Color("red")]
 color_palette_len = len(color_palette)
 
-max_sig_figs = 4
+max_sig_figs = 5
 scale_list = [round(0.1 ** x, max_sig_figs) for x in range(1, max_sig_figs + 1)]
 
 mand_vtx_shader = '''
@@ -110,11 +111,10 @@ class MainWindow(WindowConfig):
             start_inx = end_inx
             end_inx += sections
 
-        self.mouse_ref = (0, 0)
-        self.cur_loc = (0, 0)
+        self.mouse_ref = [0, 0]
 
         self.translate.value = (0, 0)
-        self.scale.value = 1.5
+        self.scale.value = max_zoom_out
         self.max_iters.value = 100
         self.ratio.value = self.aspect_ratio
         self.texture = self.ctx.texture((256, 1), 3, data=color_bytes)
@@ -134,17 +134,13 @@ class MainWindow(WindowConfig):
         correction_factor = 0.6
 
         if y_offset > 0 and self.scale.value > scale_list[-1]:
-            self.translate.value = correction_xy(self.mouse_ref[0], self.mouse_ref[1])
-
             for i in scale_list:
                 if self.scale.value > i:
                     self.scale.value -= i * correction_factor
                     break
 
         elif y_offset < 0:
-            if self.scale.value < 1.5:
-                self.translate.value = correction_xy(self.mouse_ref[0], self.mouse_ref[1])
-
+            if self.scale.value < max_zoom_out:
                 scaled = 0
                 for i in reversed(scale_list):
                     if self.scale.value < (i * 10):
@@ -155,14 +151,22 @@ class MainWindow(WindowConfig):
                 if not scaled:
                     self.scale.value += 0.1 * correction_factor
             else:
-                self.scale.value = 1.5
+                self.scale.value = max_zoom_out
                 self.translate.value = (0, 0)
 
     def mouse_position_event(self, x, y, dx, dy):
-        self.cur_loc = (x, y)
+        if self.scale.value == max_zoom_out:
+            self.mouse_ref = [x, y]
 
-        if self.scale.value == 1.5:
-            self.mouse_ref = self.cur_loc
+    def mouse_drag_event(self, x: int, y: int, dx: int, dy: int):
+        new_center = (
+            self.mouse_ref[0] + (dx * self.scale.value * -1.0),
+            self.mouse_ref[1] + (dy * self.scale.value * -1.0))
+
+        self.translate.value = correction_xy(new_center[0], new_center[1])
+
+        self.mouse_ref[0] = new_center[0]
+        self.mouse_ref[1] = new_center[1]
 
 
 if __name__ == "__main__":
