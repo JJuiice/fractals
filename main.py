@@ -1,23 +1,20 @@
 from moderngl import TRIANGLE_STRIP
 from moderngl_window import WindowConfig
 
-from logging import getLogger
 from colour import Color
 import numpy as np
 
-logger = getLogger(__name__)
+W, H = 1920, 1080
+A_RATIO = 16 / 9
+MAX_ZOOM_OUT_SCALE = 1.5
+MAX_ITERS = 200
 
-w, h = 1920, 1080
-a_ratio = 16 / 9
-max_zoom_out = 1.5
+color_palette = [Color("black"), Color("yellow"), Color("blue"), Color("red")]
 
-color_palette = [Color("black"), Color("blue"), Color("red")]
-color_palette_len = len(color_palette)
+MAX_SIG_FIGS = 5
+SCALE_LIST = [round(0.1 ** x, MAX_SIG_FIGS) for x in range(1, MAX_SIG_FIGS + 1)]
 
-max_sig_figs = 5
-scale_list = [round(0.1 ** x, max_sig_figs) for x in range(1, max_sig_figs + 1)]
-
-mand_vtx_shader = '''
+MAND_VTX_SHADER = '''
 #version 330
 
 in vec2 in_vert;
@@ -29,7 +26,7 @@ void main() {
 }
 '''
 
-mand_frag_shader = '''
+MAND_FRAG_SHADER = '''
 # version 330
 
 in vec2 v_text;
@@ -68,24 +65,24 @@ void main()
 
 
 def correction_xy(x, y):
-    norm_x = -2.65 + 5.3 * float(x / w)
-    norm_y = 1.5 - 3.0 * float(y / h)
+    norm_x = -2.65 + 5.3 * float(x / W)
+    norm_y = 1.5 - 3.0 * float(y / H)
 
     return norm_x, norm_y
 
 
 class MainWindow(WindowConfig):
     gl_version = (3, 3)
-    window_size = (w, h)
-    aspect_ratio = a_ratio
+    window_size = (W, H)
+    aspect_ratio = A_RATIO
     title = "Mandelbrot"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.prog = self.ctx.program(
-            vertex_shader=mand_vtx_shader,
-            fragment_shader=mand_frag_shader
+            vertex_shader=MAND_VTX_SHADER,
+            fragment_shader=MAND_FRAG_SHADER
         )
 
         self.translate = self.prog['u_translate']
@@ -93,18 +90,19 @@ class MainWindow(WindowConfig):
         self.ratio = self.prog['u_ratio']
         self.max_iters = self.prog['u_max_iters']
 
+        color_palette_len = len(color_palette)
+
+        if color_palette_len % 2 != 0:
+            color_palette.append(Color("black"))
+            color_palette_len = len(color_palette)
+
         start_inx = 0
-        sections = int(256 / color_palette_len)
+        sections = int(256.0 / (color_palette_len - 1))
         end_inx = sections
 
         color_bytes = np.zeros((256, 1, 3), dtype=np.uint8)
 
-        if color_palette_len % 2 != 0:
-            start_inx += 1
-            end_inx += 1
-            color_bytes[0, 0] = np.array([0, 0, 0]).astype(np.uint8)
-
-        for i in range(len(color_palette) - 1):
+        for i in range(color_palette_len - 1):
             section_gradient = list(color_palette[i].range_to(color_palette[i + 1], sections))
             color_bytes[start_inx: end_inx, 0] = [np.array(np.array(list(color.get_rgb())) * 255).astype(np.uint8)
                                                   for color in section_gradient]
@@ -114,8 +112,8 @@ class MainWindow(WindowConfig):
         self.mouse_ref = [0, 0]
 
         self.translate.value = (0, 0)
-        self.scale.value = max_zoom_out
-        self.max_iters.value = 100
+        self.scale.value = MAX_ZOOM_OUT_SCALE
+        self.max_iters.value = MAX_ITERS
         self.ratio.value = self.aspect_ratio
         self.texture = self.ctx.texture((256, 1), 3, data=color_bytes)
 
@@ -131,18 +129,18 @@ class MainWindow(WindowConfig):
         self.vao.render(TRIANGLE_STRIP)
 
     def mouse_scroll_event(self, x_offset: float, y_offset: float):
-        correction_factor = 0.6
+        correction_factor = 0.7
 
-        if y_offset > 0 and self.scale.value > scale_list[-1]:
-            for i in scale_list:
+        if y_offset > 0 and self.scale.value > SCALE_LIST[-1]:
+            for i in SCALE_LIST:
                 if self.scale.value > i:
                     self.scale.value -= i * correction_factor
                     break
 
         elif y_offset < 0:
-            if self.scale.value < max_zoom_out:
+            if self.scale.value < MAX_ZOOM_OUT_SCALE:
                 scaled = 0
-                for i in reversed(scale_list):
+                for i in reversed(SCALE_LIST):
                     if self.scale.value < (i * 10):
                         self.scale.value += i * correction_factor
                         scaled = 1
@@ -151,11 +149,11 @@ class MainWindow(WindowConfig):
                 if not scaled:
                     self.scale.value += 0.1 * correction_factor
             else:
-                self.scale.value = max_zoom_out
+                self.scale.value = MAX_ZOOM_OUT_SCALE
                 self.translate.value = (0, 0)
 
     def mouse_position_event(self, x, y, dx, dy):
-        if self.scale.value == max_zoom_out:
+        if self.scale.value == MAX_ZOOM_OUT_SCALE:
             self.mouse_ref = [x, y]
 
     def mouse_drag_event(self, x: int, y: int, dx: int, dy: int):
