@@ -2,12 +2,12 @@
 Display basic fractal projections - just mandelbrot at the moment
 
 ## Requirements
-- Python 3.9.1
+- Python 3.9
 - NumPy
 - moderngl & moderngl-window
 - colour
 
-## Execute 
+## Execute
 ```
 python main.py
 ```

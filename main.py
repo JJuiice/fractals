@@ -29,32 +29,34 @@ void main() {
 MAND_FRAG_SHADER = '''
 # version 330
 
+# extension GL_ARB_gpu_shader_fp64 : enable
+
 in vec2 v_text;
 out vec4 f_color;
 
 uniform sampler2D u_texture;
-uniform vec2 u_translate;
-uniform float u_scale;
-uniform float u_ratio;
+uniform dvec2 u_translate;
+uniform double u_scale;
+uniform double u_ratio;
 uniform int u_max_iters;
 
 void main()
 {
-    vec2 c;
+    dvec2 c;
     int i;
 
     c.x = u_ratio * v_text.x * u_scale - 0.5 + u_translate.x;
     c.y = v_text.y * u_scale + u_translate.y;
 
-    vec2 z = c;
+    dvec2 z = c;
 
     for (i = 0; i < u_max_iters; i++) {
-        float x = (z.x * z.x - z.y * z.y) + c.x;
-        float y = 2 * z.x * z.y + c.y;
+        double x = (z.x * z.x - z.y * z.y) + c.x;
+        double y = 2 * z.x * z.y + c.y;
 
         if ((x * x + y * y) > 4.0)
             break;
-        
+
         z.x = x;
         z.y = y;
     }
